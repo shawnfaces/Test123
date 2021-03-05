@@ -1,0 +1,137 @@
+from kiteconnect import KiteConnect
+from datetime import datetime
+from send_mail import Mail
+import logging
+import my_logging
+import stock_cons
+from common import *
+from zerodha_class import My_Class
+import time
+from datetime import datetime
+import schedule
+import sys
+from collections import OrderedDict
+
+
+symbol = ["NSE:NIFTY BANK"]
+entry_logic = {1:1,2:1,3:2,4:4,5:8,6:2,7:4,8:8}
+entry_turn_call = {1:"CE",2:"PE",3:"CE",4:"PE",5:"CE",6:"PE",7:"CE",8:"PE"}
+#entry_turn_call = {1:"CE",2:"CE",3:"PE",4:"CE",5:"PE",6:"CE",7:"PE",8:"PE"}
+#entry_turn_put = {1:"PE",2:"PE",3:"CE",4:"PE",5:"CE",6:"CE",7:"PE",8:"PE"}
+entry_turn_put = {1:"PE",2:"CE",3:"PE",4:"CE",5:"PE",6:"CE",7:"PE",8:"CE"}
+nifty_open = 0
+result_mail = []
+mail_list = ["shanmca020391@gmail.com"]
+mail_subject = "banknifty 25"
+my_class = My_Class()
+bn_option = "BANKNIFTY21310"
+
+
+def check_time():
+    result = False
+    till_time = ['15', '15', '00']
+    now = datetime.now()
+    now_time = now.strftime("%H:%M:%S")
+    now_time = now_time.split(":")
+    for i in range(1):
+        if int(now_time[i]) >= 9 and int(now_time[i]) <=15:
+            result = True
+            if int(now_time[i]) == 9:
+                if int(now_time[i+1]) < 15:
+                    result = False
+            if int(now_time[i]) == 15:
+                if int(now_time[i+1]) > 15:
+                    result = False
+    return result
+
+
+
+
+def start():
+    total_p = 0
+    count = 1
+    turndaily = entry_turn_put
+    while(count <= 5):
+        if count == 1:
+            if not check_time():
+                exit()
+
+        turn = turndaily[count]
+        #get gtt list
+        logging.info("===" * 8)
+        print("===" * 8)
+        logging.info("ENTRY: " +str(count))
+        print("ENTRY: " +str(count))
+        logging.info("Get Active GTT list: ")
+        gtts = my_class.get_active_gtts()
+        logging.info("Active GTT list: " +str(gtts))
+        del_res = my_class.delete_all_active_gtt(gtts)
+        logging.info("Delete Active GTTS: "+str(del_res))
+        print("Delete Active GTTS: "+str(del_res))
+        nb_sp = my_class.get_ltp(symbol)
+        logging.info("BANK NIFTY EQUITY price: "+str(nb_sp))
+        print("BANK NIFTY EQUITY price: "+str(nb_sp))
+        atm = get_option_chain(symbol,nb_sp,turn)
+        atm_sy = ["NFO:"+bn_option+str(atm)+str(turn)]
+        logging.info("AT THE MONEY SYMBOL: "+str(atm_sy))
+        #atm_sy = list(atm_sy.split(" "))
+        atm_ltp = my_class.get_ltp(atm_sy)
+        logging.info("AT THE MONEY LTP: "+str(atm_ltp))
+        #decide "transaction_type"
+        orders = [{"transaction_type": "SELL" , "quantity":entry_logic[count]*25 ,\
+                "price": atm_ltp + 2,'order_type': "LIMIT","product":"NRML" }]
+        #gtt_id = my_class.place_gtt("single",str(np_option+str(atm)+str(turn)),"NFO",[atm_ltp+2],atm_ltp,orders)
+        logging.info("Create GTT: ")
+        logging.info("OPTION: "+str(bn_option+str(atm)+str(turn))+", Trigger price: "+str([atm_ltp+2])+ \
+                ", TYPE: "+str(orders[0]["transaction_type"])+", Quantity: "+ str(orders[0]["quantity"])+ \
+                ", Price: "+str(orders[0]["price"]))
+        order_id,oco_id = my_class.place_order_and_place_oco("single",str(bn_option+str(atm)+str(turn)),\
+                "NFO",[atm_ltp+2],atm_ltp,orders,20)
+        #logging.info("ORDER DETAILS: "+str(my_class.order_trades(order_id)))
+        logging.info("Triggerd gtt DETAILS: "+str(my_class.get_gtt(order_id)))
+        logging.info("OCO DETIALS: " +str(my_class.get_gtt(oco_id)))
+        tri_res = my_class.check_gtt_triggered(oco_id)
+        if tri_res:
+            logging.info("TRIGGERD OCO DETIALS: " +str(my_class.get_gtt(oco_id)))
+        res_pl = my_class.check_target_sp(order_id,oco_id)
+        print("RESULT: "+str(res_pl))
+        if res_pl:
+            if turndaily[count] == "CE":
+                turndaily = entry_turn_call
+            else:
+                turndaily = entry_turn_put
+
+            count = 1
+            print(total_p)
+            total_p = total_p+1
+            logging.info("TOTAL PROFIT COUNT: "+str(total_p))
+            print("TOTAL PROFIT COUNT: "+str(total_p))
+        else:
+            count = count + 1
+
+        #check order id and oco id and log it
+        #print(my_class.check_gtt_status(gtt_id))
+        #if it is stop loss go for next turn
+        #break
+        #count = count + 1
+        #lot_count = entry_logic[count]
+        #order_gtt_id = 0
+        #sl_gtt_id = 0
+
+    #get banknifty price
+    #calculate atm
+    #get atm ltp
+    #logic for entry count
+    #place order,create GTT
+    #monitor gtt
+def exit():
+    print("exit program")
+    sys.exit()
+
+if __name__=="__main__":
+    #get_loch_and_check_wick(NSE_LI)
+    log("25")
+    start()
+    #schedule.every().day.at("09:16").do(start)
+    #while True:
+    #   schedule.run_pending()
